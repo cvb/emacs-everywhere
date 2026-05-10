@@ -721,25 +721,21 @@ Please go to 'System Preferences > Security & Privacy > Privacy > Accessibility'
 (defun emacs-everywhere--ensure-oscascript-compiled (&optional force)
   "Ensure that compiled oscascript files are present.
 Will always compile when FORCE is non-nil."
-  (unless (and (file-exists-p "app-name")
-               (file-exists-p "window-geometry")
-               (file-exists-p "window-title")
-               (not force))
-    (let ((default-directory emacs-everywhere--dir)
-          (app-name
-           "tell application \"System Events\"
+  (let ((default-directory emacs-everywhere--dir)
+        (app-name
+         "tell application \"System Events\"
     set frontAppName to name of first application process whose frontmost is true
 end tell
 return frontAppName")
-          (window-geometry
-           "tell application \"System Events\"
+        (window-geometry
+         "tell application \"System Events\"
      set frontWindow to front window of (first application process whose frontmost is true)
      set windowPosition to (get position of frontWindow)
      set windowSize to (get size of frontWindow)
 end tell
 return windowPosition & windowSize")
-          (window-title
-           "set windowTitle to \"\"
+        (window-title
+         "set windowTitle to \"\"
 tell application \"System Events\"
      set frontAppProcess to first application process whose frontmost is true
 end tell
@@ -749,12 +745,22 @@ tell frontAppProcess
     end if
 end tell
 return windowTitle"))
+    (unless (and (not force)
+                 (cl-every (lambda (file)
+                             (and (file-regular-p file)
+                                  (> (file-attribute-size (file-attributes file)) 0)))
+                           '("app-name" "window-geometry" "window-title")))
       (dolist (script `(("app-name" . ,app-name)
                         ("window-geometry" . ,window-geometry)
                         ("window-title" . ,window-title)))
-        (write-region (cdr script) nil (concat (car script) ".applescript"))
-        (shell-command (format "osacompile -r scpt:128 -t osas -o %s %s"
-                               (car script) (concat (car script) ".applescript")))))))
+        (let ((source (concat (car script) ".applescript"))
+              (target (car script)))
+          (write-region (cdr script) nil source nil 'silent)
+          (when (file-exists-p target)
+            (delete-file target))
+          (let ((status (call-process "osacompile" nil nil nil "-o" target source)))
+            (unless (zerop status)
+              (error "osacompile failed for %s with status %s" source status))))))))
 
 (defun emacs-everywhere--app-info-windows ()
   "Return information on the active window, on Windows."
